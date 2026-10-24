@@ -1,4 +1,20 @@
-// A recorded-style Claude answer for the stage dump, used by tests only (never by the app).
+// Recorded-style Claude answers, used by tests only (never by the app).
+
+export function skeletonResult() {
+  const weekdays = { freq: 'weekly', byWeekday: [1, 2, 3, 4, 5] }
+  return {
+    summary: 'Your week: work with a flexible end, commute both ways, Sunday call, quiet hours',
+    assumptions: ['Lunch break at 12:30 for 30 min'],
+    ops: [
+      { op: 'add_entry', ref: 'work', kind: 'fixed', title: 'Work', domain: 'work', role: 'work', time: '09:00', durationMin: 480, recurrence: weekdays, deviation: { earlyMin: 120, lateMin: 30 }, breaks: [{ time: '12:30', durationMin: 30, label: 'Lunch break' }], reason: 'Weekdays 9 to 5, sometimes done by 3' },
+      { op: 'add_entry', kind: 'fixed', title: 'Commute to work', domain: 'commute', role: 'commute_to', before: 'work', durationMin: 25, recurrence: weekdays, deviation: { earlyMin: 0, lateMin: 10 }, reason: '25 minutes each way' },
+      { op: 'add_entry', kind: 'fixed', title: 'Commute home', domain: 'commute', role: 'commute_home', after: 'work', durationMin: 25, recurrence: weekdays, deviation: { earlyMin: 0, lateMin: 10 }, reason: '25 minutes each way' },
+      { op: 'add_entry', kind: 'fixed', title: 'Call parents', domain: 'social', time: '17:00', durationMin: 30, recurrence: { freq: 'weekly', byWeekday: [0] }, reason: 'Sundays at 5' },
+      { op: 'set_prefs', quietStart: '23:00', quietEnd: '07:00', reason: 'Bed at 11, up at 7' },
+    ],
+    clarifications: [],
+  }
+}
 
 import { startOfWeek, addDays, dateKey, parseDateKey } from '../src/engine/time.js'
 

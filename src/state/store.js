@@ -317,8 +317,14 @@ export function reducer(state, action) {
 
     case 'saveEntry': {
       const batchId = uid('b')
-      const op = { op: 'update', target: action.id, set: action.set, reason: 'Edited by you', ...(action.scope === 'one' ? { onlyDate: action.dateKey } : {}) }
-      const r = applyOps(state.data, [op], { now, batchId, source: 'user' })
+      // A "this day only" time change becomes an exception; any other edited field applies to the series.
+      const { time, ...rest } = action.set
+      const ops =
+        action.scope === 'one' && time
+          ? [{ op: 'update', target: action.id, onlyDate: action.dateKey, set: { time }, reason: 'Edited by you' }, ...(Object.keys(rest).length ? [{ op: 'update', target: action.id, set: rest, reason: 'Edited by you' }] : [])]
+          : [{ op: 'update', target: action.id, set: action.set, reason: 'Edited by you' }]
+      if (!Object.keys(action.set).length) return state
+      const r = applyOps(state.data, ops, { now, batchId, source: 'user' })
       return {
         ...state,
         data: r.data,

@@ -203,3 +203,25 @@ describe('time helpers', () => {
     expect(MIN).toBe(60000)
   })
 })
+
+describe('/api/ics function', () => {
+  it('serves text/calendar for a valid payload and 400 otherwise', async () => {
+    const { default: handler } = await import('../api/ics.js')
+    const res = () => {
+      const r = { headers: {}, code: 0, body: '' }
+      r.setHeader = (k, v) => ((r.headers[k] = v), r)
+      r.status = (c) => ((r.code = c), r)
+      r.send = (b) => ((r.body = b), r)
+      return r
+    }
+    const events = [{ u: 'e1', t: 'Workout', s: '20261029T181500', e: '20261029T191500', m: 15 }]
+    const ok = res()
+    handler({ query: { d: Buffer.from(JSON.stringify(events)).toString('base64url') } }, ok)
+    expect(ok.code).toBe(200)
+    expect(ok.headers['Content-Type']).toMatch(/text\/calendar/)
+    expect(ok.body).toContain('SUMMARY:Workout')
+    const bad = res()
+    handler({ query: { d: 'not-json' } }, bad)
+    expect(bad.code).toBe(400)
+  })
+})
