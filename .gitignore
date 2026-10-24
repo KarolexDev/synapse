@@ -1,0 +1,7 @@
+node_modules
+dist
+dist-artifact
+.env*.local
+.vercel
+test-results
+playwright-report
