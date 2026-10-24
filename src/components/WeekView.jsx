@@ -4,6 +4,7 @@ import { layoutRange } from '../engine/layout.js'
 import { MIN, addDays, startOfDay, fmtTime, fmtDay, fmtDuration, WEEKDAYS } from '../engine/time.js'
 import { IconButton, domainColor, Card } from './ui.jsx'
 import { eventsInRange } from '../engine/calendarExport.js'
+import { CalendarAction } from './CalendarAction.jsx'
 
 function LoadStrip({ days, today, onPick }) {
   const busy = days.map((L) => {
@@ -90,11 +91,10 @@ export function WeekView({ header, data, now, onOpen, onPickDay, onExport }) {
       })}
       <div className="space-y-4 px-5">
         <LoadStrip days={days} today={today} onPick={onPickDay} />
-        <button
-          type="button"
-          disabled={!exportable.length}
-          onClick={() => onExport(exportable)}
-          className="press flex w-full items-center gap-3 rounded-[22px] border border-white/[0.06] bg-surface px-4 py-3.5 text-left disabled:opacity-40"
+        <CalendarAction
+          events={exportable}
+          onExport={onExport}
+          className="press flex w-full items-center gap-3 rounded-[22px] border border-white/[0.06] bg-surface px-4 py-3.5 text-left"
         >
           <div className="grid h-10 w-10 place-items-center rounded-2xl bg-emerald-400/15 text-emerald-300">
             <CalendarPlus size={19} />
@@ -104,7 +104,7 @@ export function WeekView({ header, data, now, onOpen, onPickDay, onExport }) {
             <div className="text-[12.5px] text-ink-3">{exportable.length} planned entries with 15-min reminders · skips work & commute</div>
           </div>
           <ChevronRight size={16} className="text-ink-3" />
-        </button>
+        </CalendarAction>
         {days.map((L) => {
           const items = [...L.allDay, ...L.occurrences]
           return (

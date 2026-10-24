@@ -62,18 +62,14 @@ function downloadFile(text) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
+// The claude.ai frame cannot save .ics files, but it opens https links in a new tab, so the
+// artifact edition links to the deployed web app's /api/ics (hidden until VITE_WEB_URL is set).
+const WEB_URL = (import.meta.env.VITE_WEB_URL || '').replace(/\/$/, '')
+export const CAN_EXPORT = !IS_ARTIFACT || !!WEB_URL
+export const calendarHref = (events) => (IS_ARTIFACT && WEB_URL && events.length ? `${WEB_URL}/api/ics?d=${b64url(JSON.stringify(events))}` : null)
+
 export async function addToCalendar(events) {
   if (!events.length) return { ok: false, message: 'Nothing to add yet.' }
-  if (IS_ARTIFACT) {
-    const downloads = await window.claude?.use?.('downloads').catch(() => null)
-    if (!downloads) return { ok: false, message: 'Saving files is not available here.' }
-    try {
-      await downloads.save({ filename: 'synapse.ics', data: buildICS(events) })
-      return { ok: true }
-    } catch (e) {
-      return { ok: false, message: e?.code === 'cancelled' || e?.code === 'declined' ? 'Not saved.' : 'Could not save the calendar file.' }
-    }
-  }
   if (import.meta.env.DEV) {
     downloadFile(buildICS(events))
     return { ok: true }

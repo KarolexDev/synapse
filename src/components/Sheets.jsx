@@ -5,6 +5,8 @@ import { parseDateKey, fmtTime, fmtDuration, fmtDayLong, WEEKDAYS, dateKey, addD
 import { occurrenceOf } from '../engine/layout.js'
 import { Sheet, Chip, Segmented, Stepper, PrimaryButton, GhostButton, Card, SectionTitle, Badge } from './ui.jsx'
 import { validateKey, IS_ARTIFACT, MODELS, modelLabel } from '../engine/ai.js'
+import { eventsForEntry } from '../engine/calendarExport.js'
+import { CalendarAction } from './CalendarAction.jsx'
 
 const Row = ({ label, children, hint }) => (
   <div className="flex items-center justify-between gap-3 py-2.5">
@@ -82,9 +84,9 @@ export function EntrySheet({ target, data, now, log, onClose, onSave, onDelete, 
       title={entry.hold ? 'Appointment hold' : flex ? 'Planned by Synapse' : 'Entry'}
       footer={
         <div className="flex gap-2 pb-2">
-          <GhostButton onClick={() => onExport(entry)} className="!px-3">
+          <CalendarAction events={eventsForEntry(data.entries, entry, now)} onExport={onExport} className="press inline-flex items-center justify-center rounded-2xl bg-white/[0.07] px-3 py-3 text-ink hover:bg-white/[0.1]">
             <CalendarPlus size={17} />
-          </GhostButton>
+          </CalendarAction>
           {flex || entry.taskId ? (
             <GhostButton onClick={() => onToggleDone(occ)} className="!px-3">
               <Check size={17} className={done ? 'text-emerald-300' : ''} />

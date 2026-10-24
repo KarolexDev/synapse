@@ -3,6 +3,7 @@ import { Brain, Mic, Square, Sparkles, Send, MessageCircleQuestion } from 'lucid
 import { useSpeech } from '../hooks.js'
 import { PrimaryButton, Orb } from './ui.jsx'
 import { EXAMPLE_DUMPS } from '../state/demoWeek.js'
+import { IS_ARTIFACT } from '../engine/ai.js'
 
 function Waveform() {
   return (
@@ -97,6 +98,8 @@ export function BrainDump({ value, onChange, onSubmit, busy, autoFocus, examples
         </div>
       ) : null}
       <div className="mt-2 flex items-center gap-2">
+        {/* The claude.ai frame refuses the microphone; the keyboard's dictation key still works there. */}
+        {!IS_ARTIFACT ? (
         <button
           type="button"
           onClick={toggleMic}
@@ -105,6 +108,7 @@ export function BrainDump({ value, onChange, onSubmit, busy, autoFocus, examples
         >
           {speech.listening ? <Square size={16} fill="currentColor" /> : <Mic size={19} />}
         </button>
+        ) : null}
         <PrimaryButton glow onClick={submit} disabled={!value.trim() || busy} className="ml-auto flex-1 !py-3">
           <Sparkles size={17} /> {submitLabel}
         </PrimaryButton>

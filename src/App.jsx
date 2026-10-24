@@ -3,7 +3,7 @@ import { reducer, loadState, saveState } from './state/store.js'
 import { demoNow } from './state/demoWeek.js'
 import { useNow, useFramed } from './hooks.js'
 import { runAI } from './engine/ai.js'
-import { eventsForEntry, addToCalendar } from './engine/calendarExport.js'
+import { addToCalendar } from './engine/calendarExport.js'
 import { startOfDay, fmtTime, fmtDayLong, WEEKDAYS } from './engine/time.js'
 import { DeviceFrame, TabBar, Toasts, ProcessingOverlay } from './components/Chrome.jsx'
 import { AppHeader } from './components/Header.jsx'
@@ -252,7 +252,7 @@ export default function App() {
             if (occ) toggleDone(occ)
             setSheet(null)
           }}
-          onExport={(entry) => exportEvents(eventsForEntry(state.data.entries, entry, now))}
+          onExport={exportEvents}
         />
       ) : null}
       {sheet?.type === 'settings' ? (

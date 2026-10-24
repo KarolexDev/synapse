@@ -18,7 +18,7 @@ export function DeviceFrame({ framed, statusTime, children }) {
     return () => window.removeEventListener('resize', fit)
   }, [framed])
 
-  if (!framed) return <div className="relative h-[100dvh] w-full overflow-hidden bg-bg">{children}</div>
+  if (!framed) return <div className="relative h-full w-full overflow-hidden bg-bg">{children}</div>
 
   const w = PHONE_W + BEZEL * 2
   const h = PHONE_H + BEZEL * 2

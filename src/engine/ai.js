@@ -1,7 +1,6 @@
 // Claude access. Web edition: the user's own API key, sent directly from the browser to Anthropic.
 // Artifact edition: the viewer's claude.ai account through the `sample` capability (no key).
 
-import Anthropic from '@anthropic-ai/sdk'
 import { SYSTEM_PROMPT, OUTPUT_SCHEMA, buildUserTurn } from './prompt.js'
 
 export const IS_ARTIFACT = typeof __EDITION__ !== 'undefined' && __EDITION__ === 'artifact'
@@ -18,12 +17,21 @@ export class AIError extends Error {
   }
 }
 
+// The SDK is only needed by the web edition; the constant condition lets the artifact build drop it.
+let sdkPromise = null
+const loadSDK = () => {
+  if (IS_ARTIFACT) throw new AIError('Not available in this edition.')
+  sdkPromise ??= import('@anthropic-ai/sdk').then((m) => m.default)
+  return sdkPromise
+}
+
 // maxRetries: 1 = one automatic SDK retry for 429/5xx/connection errors before we switch models.
-const makeClient = (apiKey) => new Anthropic({ apiKey, dangerouslyAllowBrowser: true, maxRetries: 1, timeout: 45_000 })
+const makeClient = (Anthropic, apiKey) => new Anthropic({ apiKey, dangerouslyAllowBrowser: true, maxRetries: 1, timeout: 45_000 })
 
 export async function validateKey(apiKey) {
+  const Anthropic = await loadSDK()
   try {
-    await makeClient(apiKey).models.list({ limit: 1 })
+    await makeClient(Anthropic, apiKey).models.list({ limit: 1 })
     return { ok: true }
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError) return { ok: false, message: 'Anthropic rejected this key.' }
@@ -44,7 +52,7 @@ function extractJSON(text) {
   }
 }
 
-function friendly(e) {
+function friendly(Anthropic, e) {
   if (e instanceof AIError) return e.message
   if (e instanceof Anthropic.RateLimitError) return 'Your key is being rate-limited by Anthropic. Try again in a moment.'
   if (e instanceof Anthropic.APIConnectionTimeoutError) return 'Claude took too long to answer.'
@@ -54,8 +62,8 @@ function friendly(e) {
   return e?.message || 'Something went wrong.'
 }
 
-async function callAnthropic({ apiKey, model, user, schema }) {
-  const client = makeClient(apiKey)
+async function callAnthropic(Anthropic, { apiKey, model, user, schema }) {
+  const client = makeClient(Anthropic, apiKey)
   const params = {
     model,
     max_tokens: 16000,
@@ -114,6 +122,7 @@ export async function runAI({ mode, text, data, now, settings, apiKey, question,
   const user = buildUserTurn({ mode, text, data, now, question })
   if (IS_ARTIFACT) return runSample({ user, settings })
   if (!apiKey) throw new AIError('Connect your Claude API key in Settings first.', { code: 'no_key' })
+  const Anthropic = await loadSDK()
   const primary = settings.tier === 'depth' ? MODELS.depth : MODELS.fast
   const secondary = primary === MODELS.fast ? MODELS.depth : MODELS.fast
   const attempts = [{ model: primary, schema: true }, { model: secondary, schema: true }]
@@ -123,7 +132,7 @@ export async function runAI({ mode, text, data, now, settings, apiKey, question,
     const a = attempts[i]
     if (i > 0) onStage?.(`Retrying with ${modelLabel(a.model)}…`)
     try {
-      const r = await callAnthropic({ apiKey, model: a.model, user, schema: a.schema })
+      const r = await callAnthropic(Anthropic, { apiKey, model: a.model, user, schema: a.schema })
       return { result: r.json, meta: { model: modelLabel(r.model || a.model), ms: performance.now() - t0, attempts: i + 1 } }
     } catch (e) {
       lastErr = e
@@ -136,5 +145,5 @@ export async function runAI({ mode, text, data, now, settings, apiKey, question,
       }
     }
   }
-  throw new AIError(friendly(lastErr), { code: 'failed', retryable: true })
+  throw new AIError(friendly(Anthropic, lastErr), { code: 'failed', retryable: true })
 }

@@ -36,6 +36,13 @@ textarea {
   font-size: 16px; /* prevents iOS zoom on focus */
 }
 
+/* Inside the claude.ai viewer the page skeleton already pads :root by the safe-area insets. */
+:root[data-edition='artifact'] {
+  box-sizing: border-box;
+  --sat: 12px;
+  --sab: 0px;
+}
+
 .frame {
   --sat: 54px;
   --sab: 30px;

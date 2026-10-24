@@ -11,9 +11,13 @@ const hexA = (hex, a) => {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`
 }
 
-// Assign side-by-side columns to blocks whose nominal times overlap.
-function withColumns(occs) {
-  const out = []
+// Assign side-by-side columns to blocks whose nominal times overlap. Items placed inside another
+// block's break (a call in the lunch break) are drawn on top of that break instead.
+function withColumns(all) {
+  const insideBreak = (o) => all.some((p) => p !== o && p.breaks?.some((b) => o.start >= b.start && o.end <= b.end))
+  const nested = all.filter(insideBreak).map((o) => ({ ...o, col: 0, cols: 1, nested: true }))
+  const occs = all.filter((o) => !insideBreak(o))
+  const out = [...nested]
   let cluster = []
   let clusterEnd = -Infinity
   const flush = () => {
@@ -61,11 +65,11 @@ function Block({ o, top, occs, onOpen, onToggleDone, fresh, index }) {
       className={`absolute ${fresh ? 'animate-slide-in' : ''}`}
       style={{
         top,
-        left: `calc(${RAIL}px + (100% - ${RAIL + 6}px) * ${o.col / o.cols})`,
-        width: `calc((100% - ${RAIL + 6}px) / ${o.cols} - 4px)`,
+        left: o.nested ? `${RAIL + 18}px` : `calc(${RAIL}px + (100% - ${RAIL + 6}px) * ${o.col / o.cols})`,
+        width: o.nested ? `calc(100% - ${RAIL + 28}px)` : `calc((100% - ${RAIL + 6}px) / ${o.cols} - 4px)`,
         height: fullH + lateH,
         animationDelay: fresh ? `${index * 70}ms` : undefined,
-        zIndex: e.kind === 'flex' ? 3 : 2,
+        zIndex: o.nested ? 4 : e.kind === 'flex' ? 3 : 2,
       }}
     >
       <button
