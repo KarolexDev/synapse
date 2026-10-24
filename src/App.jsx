@@ -86,7 +86,7 @@ export default function App() {
         await wait(520)
         setProcessing((p) => p && { ...p, stage: 2 })
         await wait(520)
-        if (job.mode === 'answer') dispatch({ type: 'answer', qid: job.question.id, ops: result?.ops || [], label: job.text, now: clock() })
+        if (job.mode === 'answer') dispatch({ type: 'answer', qid: job.question.id, ops: result?.ops || [], label: job.text, meta, now: clock() })
         else dispatch({ type: 'applyResult', result, meta, now: clock(), label: job.mode === 'skeleton' ? 'Your week' : 'Brain dump', silent: job.mode === 'skeleton' })
         setProcessing(null)
         return true
@@ -219,6 +219,7 @@ export default function App() {
           now={now}
           busy={!!processing}
           onSetKey={(apiKey) => dispatch({ type: 'setKey', apiKey })}
+          onSetLocation={(location) => dispatch({ type: 'setLocation', location, now: clock() })}
           onBuild={(text) => run({ mode: 'skeleton', text })}
           onRemove={(id) => dispatch({ type: 'removeSkeletonEntry', id })}
           onRestart={() => dispatch({ type: 'clearData' })}
@@ -260,6 +261,7 @@ export default function App() {
           state={state}
           onClose={() => setSheet(null)}
           onSetKey={(apiKey) => dispatch({ type: 'setKey', apiKey })}
+          onSetLocation={(location) => dispatch({ type: 'setLocation', location, now: clock() })}
           onTier={(tier) => dispatch({ type: 'setSettings', settings: { tier } })}
           onTimeTravel={() => setSheet({ type: 'time' })}
           onLoadDemo={loadDemo}

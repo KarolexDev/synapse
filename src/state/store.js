@@ -49,8 +49,18 @@ export function saveState(state) {
 
 const sysLog = (now, type, title, detail = '', lines = [], refs = [], batchId = null) => ({ id: uid('l'), ts: now, type, title, detail, lines, refs, batchId })
 
+// Only the newest few Claude calls keep their full prompt and answer, to keep storage small.
+const KEEP_RAW = 15
+
 function addLogs(state, logs) {
-  return logs.length ? [...state.log, ...logs].slice(-MAX_LOG) : state.log
+  if (!logs.length) return state.log
+  const all = [...state.log, ...logs].slice(-MAX_LOG)
+  let seen = 0
+  for (let i = all.length - 1; i >= 0; i--) {
+    if (!all[i].sent && !all[i].raw) continue
+    if (++seen > KEEP_RAW) all[i] = { ...all[i], sent: undefined, raw: undefined }
+  }
+  return all
 }
 
 function addToast(state, toast) {
@@ -137,6 +147,18 @@ export function reducer(state, action) {
       return { ...state, apiKey: action.apiKey }
     case 'setSettings':
       return { ...state, settings: { ...state.settings, ...action.settings } }
+    case 'setLocation': {
+      const prev = state.data.prefs.location
+      const loc = action.location
+      const moved = !prev || prev.countryCode !== loc.countryCode || prev.regionCode !== loc.regionCode
+      // A new country or region has different shop hours and holidays: let Claude supply them again.
+      const prefs = { ...state.data.prefs, location: loc, ...(moved ? { shopHours: null, holidays: [], holidaysSetOn: null } : {}) }
+      return {
+        ...state,
+        data: { ...state.data, prefs },
+        log: addLogs(state, [sysLog(now, 'prefs', `Location: ${[loc.city, loc.country].filter(Boolean).join(', ')}`, moved ? 'Shop hours and holidays will be updated for this place with your next brain dump' : 'Same region as before')]),
+      }
+    }
     case 'setOnboarded':
       return { ...state, onboarded: action.value }
     case 'dismissToast':
@@ -190,6 +212,7 @@ export function reducer(state, action) {
     case 'answer': {
       const batchId = uid('b')
       const r = answerClarification(state.data, action.qid, { optionId: action.optionId, ops: action.ops, label: action.label }, { now, batchId })
+      if (action.meta?.sent) Object.assign(r.logs[0], { sent: action.meta.sent.slice(0, 16_000), raw: JSON.stringify({ ops: action.ops }, null, 1).slice(0, 12_000) })
       const scheduled = countType(r.logs, 'schedule')
       return {
         ...state,

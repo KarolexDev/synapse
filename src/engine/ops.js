@@ -338,6 +338,7 @@ export function applyOps(data, ops, ctx) {
           }
           if (Array.isArray(raw.holidays)) {
             prefs.holidays = [...new Set(raw.holidays.map(vDate).filter(Boolean))].sort().slice(0, 30)
+            prefs.holidaysSetOn = dateKey(now)
             if (prefs.holidays.length) log('prefs', `${prefs.holidays.length} public holiday${prefs.holidays.length > 1 ? 's' : ''} noted`, prefs.holidays.map((d) => fmtDay(parseDateKey(d))).join(', '))
           }
           break
@@ -469,6 +470,7 @@ export function applyAIResult(data, result, ctx) {
     detail: ctx.meta ? `${ctx.meta.model} · ${(ctx.meta.ms / 1000).toFixed(1)} s${ctx.meta.attempts > 1 ? ` · ${ctx.meta.attempts} attempts` : ''}` : '',
     lines: strArr(result?.assumptions, 6).map((a) => `Assumed: ${a}`),
     raw: ctx.meta ? JSON.stringify(result, null, 1).slice(0, 12_000) : undefined,
+    sent: ctx.meta?.sent ? String(ctx.meta.sent).slice(0, 16_000) : undefined,
   }
   const qLogs = questions.map((q) => ({ id: uid('l'), ts: ctx.now, type: 'clarify', batchId: ctx.batchId, refs: [], title: `Asking: ${q.question}`, detail: q.why, lines: [] }))
   return {

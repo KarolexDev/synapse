@@ -3,7 +3,9 @@
 
 import { SYSTEM_PROMPT, OUTPUT_SCHEMA, buildUserTurn } from './prompt.js'
 
-export const IS_ARTIFACT = typeof __EDITION__ !== 'undefined' && __EDITION__ === 'artifact'
+import { IS_ARTIFACT } from './edition.js'
+
+export { IS_ARTIFACT }
 
 export const MODELS = { fast: 'claude-haiku-5-5', depth: 'claude-sonnet-5-5' }
 const MODEL_LABELS = { 'claude-haiku-5-5': 'Claude Haiku 5.5', 'claude-sonnet-5-5': 'Claude Sonnet 5.5' }
@@ -107,7 +109,7 @@ async function runSample({ user, settings }) {
   const tier = settings.tier === 'depth' ? 'default' : 'quick'
   try {
     const json = await sample.json(`${SYSTEM_PROMPT}\n\n${user}\n\nReply with ONLY the JSON object described above.`, { modelTier: tier })
-    return { result: json, meta: { model: tier === 'quick' ? 'Claude (quick)' : 'Claude', ms: performance.now() - t0, attempts: 1 } }
+    return { result: json, meta: { model: tier === 'quick' ? 'Claude (quick)' : 'Claude', ms: performance.now() - t0, attempts: 1, sent: user } }
   } catch (e) {
     const code = e?.code || 'upstream_error'
     throw new AIError(SAMPLE_ERRORS[code] || 'Claude had a hiccup.', { code, retryable: !['not_granted', 'sampling_disabled', 'not_declared'].includes(code) })
@@ -133,7 +135,7 @@ export async function runAI({ mode, text, data, now, settings, apiKey, question,
     if (i > 0) onStage?.(`Retrying with ${modelLabel(a.model)}…`)
     try {
       const r = await callAnthropic(Anthropic, { apiKey, model: a.model, user, schema: a.schema })
-      return { result: r.json, meta: { model: modelLabel(r.model || a.model), ms: performance.now() - t0, attempts: i + 1 } }
+      return { result: r.json, meta: { model: modelLabel(r.model || a.model), ms: performance.now() - t0, attempts: i + 1, sent: user } }
     } catch (e) {
       lastErr = e
       if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError)

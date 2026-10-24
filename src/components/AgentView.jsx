@@ -40,6 +40,7 @@ const DECISION_TYPES = new Set(['schedule', 'reflow', 'rollover', 'merge', 'domi
 function LogItem({ l, onOpenRef, entryExists }) {
   const [open, setOpen] = useState(false)
   const [raw, setRaw] = useState(false)
+  const [sent, setSent] = useState(false)
   const t = TYPES[l.type] || TYPES.system
   const Icon = t.icon
   const ref = l.refs?.find(entryExists)
@@ -55,7 +56,7 @@ function LogItem({ l, onOpenRef, entryExists }) {
         </div>
         <div className="text-[14.5px] font-semibold leading-snug">{l.title}</div>
         {l.detail ? <div className="mt-0.5 text-[13px] leading-snug text-ink-2">{l.detail}</div> : null}
-        <div className="mt-1 flex items-center gap-3">
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
           {l.lines?.length ? (
             <button type="button" onClick={() => setOpen((x) => !x)} className="press inline-flex items-center gap-1 text-[12.5px] font-semibold text-violet-300">
               {open ? 'Hide' : 'Show'} reasoning ({l.lines.length}) <ChevronDown size={13} className={open ? 'rotate-180' : ''} />
@@ -66,12 +67,23 @@ function LogItem({ l, onOpenRef, entryExists }) {
               Open →
             </button>
           ) : null}
+          {l.sent ? (
+            <button type="button" onClick={() => setSent((x) => !x)} className="press text-[12.5px] font-semibold text-ink-3 hover:text-ink-2">
+              {sent ? 'Hide' : 'Show'} what Claude saw
+            </button>
+          ) : null}
           {l.raw ? (
             <button type="button" onClick={() => setRaw((x) => !x)} className="press text-[12.5px] font-semibold text-ink-3 hover:text-ink-2">
               {raw ? 'Hide' : 'Show'} Claude’s answer
             </button>
           ) : null}
         </div>
+        {sent ? (
+          <div className="mt-2">
+            <p className="mb-1 text-[11.5px] text-ink-3">Sent with Synapse’s fixed planning instructions:</p>
+            <pre className="no-scrollbar max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-black/40 p-3 font-mono text-[10.5px] leading-snug text-ink-2">{l.sent}</pre>
+          </div>
+        ) : null}
         {raw ? <pre className="no-scrollbar mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-black/40 p-3 font-mono text-[10.5px] leading-snug text-ink-2">{l.raw}</pre> : null}
         {open ? (
           <ul className="mt-2 space-y-1 border-l border-white/10 pl-3">

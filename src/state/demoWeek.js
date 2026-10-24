@@ -23,7 +23,6 @@ export function demoOps(now) {
   const weekdays = { freq: 'weekly', byWeekday: [1, 2, 3, 4, 5] }
   return [
     { op: 'set_prefs', quietStart: '23:00', quietEnd: '07:00', reason: 'You sleep from 23:00 to 07:00' },
-    { op: 'set_prefs', shopHours: { days: [1, 2, 3, 4, 5, 6], from: '08:00', until: '20:00' }, reason: 'Typical shop hours in Germany: closed on Sundays' },
     {
       op: 'add_entry', ref: 'work', kind: 'fixed', title: 'Work', domain: 'work', role: 'work', date: day(0), time: '09:00', durationMin: 480,
       recurrence: weekdays, deviation: { earlyMin: 120, lateMin: 30 }, breaks: [{ time: '12:30', durationMin: 30, label: 'Lunch break' }],

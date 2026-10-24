@@ -21,8 +21,9 @@ export function uid(prefix) {
   return `${prefix}_${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 6)}${counter.toString(36)}`
 }
 
-// shopHours: { days: [1..6], from: 'HH:MM', until: 'HH:MM' } for the user's country (set by Claude), holidays: ['YYYY-MM-DD']
-export const DEFAULT_PREFS = { quietStart: '23:00', quietEnd: '07:00', shopHours: null, holidays: [] }
+// shopHours: { days: [1..6], from: 'HH:MM', until: 'HH:MM' } and holidays: ['YYYY-MM-DD'] are supplied by Claude for the
+// user's location; location comes from GPS (web app) and holds only city/region/country plus rounded coordinates.
+export const DEFAULT_PREFS = { quietStart: '23:00', quietEnd: '07:00', shopHours: null, holidays: [], holidaysSetOn: null, location: null }
 
 export const DEFAULT_SETTINGS = {
   tier: 'fast', // 'fast' | 'depth'

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react'
-import { Brain, Route, MessageSquareText, KeyRound, ExternalLink, LoaderCircle, X, Moon, ShieldCheck, ArrowRight, Sparkles } from 'lucide-react'
+import { Brain, Route, MessageSquareText, KeyRound, ExternalLink, LoaderCircle, X, Moon, ShieldCheck, ArrowRight, Sparkles, MapPin } from 'lucide-react'
+import { locateMe, deviceHint, CAN_LOCATE } from '../engine/location.js'
 import { Orb, PrimaryButton, GhostButton, Card, DomainIcon } from './ui.jsx'
 import { BrainDump } from './BrainDump.jsx'
 import { validateKey, IS_ARTIFACT } from '../engine/ai.js'
@@ -108,6 +109,40 @@ function ConnectKey({ onConnected }) {
   )
 }
 
+function Place({ now, onLocated, onSkip }) {
+  const [status, setStatus] = useState(null)
+  const locate = async () => {
+    setStatus({ busy: true })
+    try {
+      onLocated(await locateMe(now))
+    } catch (e) {
+      setStatus({ error: e.message })
+    }
+  }
+  return (
+    <div className="flex min-h-full flex-col px-6 pb-8">
+      <div className="flex-1 pt-10">
+        <div className="mb-5 grid h-14 w-14 place-items-center rounded-[20px] bg-cyan-400/15 text-cyan-300">
+          <MapPin size={26} />
+        </div>
+        <h1 className="text-[30px] font-bold leading-tight tracking-tight">Where are you based?</h1>
+        <p className="mt-2 text-[15px] leading-relaxed text-ink-2">Synapse uses your city for public holidays and shop opening hours, so errands never land on a day when everything is closed.</p>
+        <Card className="mt-6 flex gap-3 px-4 py-3.5">
+          <ShieldCheck size={18} className="mt-0.5 shrink-0 text-emerald-300" />
+          <p className="text-[13px] leading-relaxed text-ink-2">Only your city, region and country are sent to Claude. Your exact position stays on this device.</p>
+        </Card>
+        {status?.error ? <p className="mt-3 text-[13px] text-rose-300">{status.error}</p> : null}
+      </div>
+      <PrimaryButton onClick={locate} disabled={status?.busy} className="w-full">
+        {status?.busy ? <LoaderCircle size={17} className="animate-spin" /> : <MapPin size={17} />} Use my location
+      </PrimaryButton>
+      <button type="button" onClick={onSkip} className="press mt-3 py-2 text-[14.5px] font-semibold text-ink-2">
+        Skip, guess from my device ({deviceHint() || 'unknown'})
+      </button>
+    </div>
+  )
+}
+
 function WeekDump({ onBuild, onDemo, busy }) {
   const [text, setText] = useState('')
   return (
@@ -191,8 +226,8 @@ function Confirm({ data, now, onRemove, onDone, onRestart }) {
   )
 }
 
-export function Onboarding({ state, now, onSetKey, onBuild, onRemove, onDone, onRestart, onDemo, busy }) {
-  const steps = IS_ARTIFACT ? ['welcome', 'week', 'confirm'] : ['welcome', 'key', 'week', 'confirm']
+export function Onboarding({ state, now, onSetKey, onSetLocation, onBuild, onRemove, onDone, onRestart, onDemo, busy }) {
+  const steps = IS_ARTIFACT || !CAN_LOCATE ? ['welcome', ...(IS_ARTIFACT ? [] : ['key']), 'week', 'confirm'] : ['welcome', 'key', 'place', 'week', 'confirm']
   const [step, setStep] = useState(state.data.entries.length ? 'confirm' : 'welcome')
   const next = (after) => setStep(steps[steps.indexOf(after) + 1])
   return (
@@ -208,6 +243,16 @@ export function Onboarding({ state, now, onSetKey, onBuild, onRemove, onDone, on
               onSetKey(k)
               next('key')
             }}
+          />
+        ) : null}
+        {step === 'place' ? (
+          <Place
+            now={now}
+            onLocated={(loc) => {
+              onSetLocation(loc)
+              next('place')
+            }}
+            onSkip={() => next('place')}
           />
         ) : null}
         {step === 'week' ? (

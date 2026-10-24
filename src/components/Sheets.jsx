@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { CalendarPlus, Trash2, Check, Wand2, Link2, Sparkles, KeyRound, Gauge, Clock, RotateCcw, ShieldCheck, LoaderCircle, Zap, Brain } from 'lucide-react'
+import { CalendarPlus, Trash2, Check, Wand2, Link2, Sparkles, KeyRound, Gauge, Clock, RotateCcw, ShieldCheck, LoaderCircle, Zap, Brain, MapPin } from 'lucide-react'
+import { locateMe, deviceHint, describeLocation, CAN_LOCATE } from '../engine/location.js'
 import { DOMAINS } from '../state/model.js'
 import { parseDateKey, fmtTime, fmtDuration, fmtDayLong, WEEKDAYS, dateKey, addDays, startOfWeek, atMinutes, MIN, HOUR, DAY } from '../engine/time.js'
 import { occurrenceOf } from '../engine/layout.js'
@@ -265,7 +266,38 @@ function KeyEditor({ onSave }) {
   )
 }
 
-export function SettingsSheet({ state, onClose, onSetKey, onTier, onTimeTravel, onLoadDemo, onReset }) {
+function LocationSection({ location, onSetLocation }) {
+  const [status, setStatus] = useState(null)
+  const locate = async () => {
+    setStatus({ busy: true })
+    try {
+      onSetLocation(await locateMe(Date.now()))
+      setStatus(null)
+    } catch (e) {
+      setStatus({ error: e.message })
+    }
+  }
+  return (
+    <div>
+      <SectionTitle>Location</SectionTitle>
+      <Card className="px-4 py-2">
+        <Row
+          label={location ? describeLocation(location) : CAN_LOCATE ? 'Not set' : 'From device settings'}
+          hint={location ? `From GPS on ${location.at} · only the city is sent to Claude` : `Device suggests ${deviceHint() || 'nothing'} · used for holidays and shop hours`}
+        >
+          {CAN_LOCATE ? (
+            <button type="button" onClick={locate} disabled={status?.busy} className="press inline-flex items-center gap-1 text-[14px] font-semibold text-violet-300 disabled:opacity-50">
+              {status?.busy ? <LoaderCircle size={14} className="animate-spin" /> : <MapPin size={14} />} {location ? 'Update' : 'Locate'}
+            </button>
+          ) : null}
+        </Row>
+        {status?.error ? <p className="pb-2 text-[12.5px] text-rose-300">{status.error}</p> : null}
+      </Card>
+    </div>
+  )
+}
+
+export function SettingsSheet({ state, onClose, onSetKey, onSetLocation, onTier, onTimeTravel, onLoadDemo, onReset }) {
   const [editingKey, setEditingKey] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
   const key = state.apiKey
@@ -303,6 +335,7 @@ export function SettingsSheet({ state, onClose, onSetKey, onTier, onTimeTravel, 
             )}
           </Card>
         </div>
+        <LocationSection location={state.data.prefs.location} onSetLocation={onSetLocation} />
         <div>
           <SectionTitle>Model</SectionTitle>
           <Card className="space-y-3 px-4 py-3">

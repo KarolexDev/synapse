@@ -109,13 +109,22 @@ test('stage script on iPhone', async ({ page }, info) => {
   await page.screenshot({ path: `${SHOTS}/11-entry-sheet.png` })
 })
 
-test('onboarding builds the week skeleton', async ({ page }, info) => {
+test('onboarding: location, then the week skeleton', async ({ page, context }, info) => {
   test.skip(info.project.name !== 'iphone')
-  await mockClaude(page, [])
+  const calls = []
+  await mockClaude(page, calls)
+  await context.grantPermissions(['geolocation'])
+  await context.setGeolocation({ latitude: 48.2082, longitude: 16.3738 })
+  await page.route('https://api.bigdatacloud.net/**', (route) =>
+    route.fulfill(json({ city: 'Vienna', locality: 'Innere Stadt', principalSubdivision: 'Wien', principalSubdivisionCode: 'AT-9', countryName: 'Austria', countryCode: 'AT' })),
+  )
   await page.goto('/')
   await page.getByRole('button', { name: /Get started/ }).click()
   await page.getByPlaceholder('sk-ant-api03-…').fill('sk-ant-test-9999')
   await page.getByRole('button', { name: 'Connect' }).click()
+  await expect(page.getByText('Where are you based?')).toBeVisible()
+  await page.screenshot({ path: `${SHOTS}/14-location.png` })
+  await page.getByRole('button', { name: 'Use my location' }).click()
   await expect(page.getByText('Tell me about a typical week')).toBeVisible()
   await page.getByRole('button', { name: 'Try: Example week' }).click()
   await page.waitForTimeout(600)
@@ -124,8 +133,16 @@ test('onboarding builds the week skeleton', async ({ page }, info) => {
   await expect(page.getByText('may end 2 h early')).toBeVisible()
   await expect(page.getByText('Commute home')).toBeVisible()
   await page.screenshot({ path: `${SHOTS}/13-skeleton.png` })
+  const sent = calls[0].messages[0].content
+  expect(sent).toMatch(/^LOCATION: Vienna, Wien, Austria \(AT-9\), from GPS on /m)
+  expect(sent).not.toMatch(/48\.2|16\.3/)
   await page.getByRole('button', { name: 'Looks right' }).click()
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Agent', exact: true }).click()
+  await page.getByRole('button', { name: 'Show what Claude saw' }).first().click()
+  await expect(page.getByText(/^LOCATION: Vienna/m)).toBeVisible()
+  await page.screenshot({ path: `${SHOTS}/15-what-claude-saw.png` })
 })
 
 test('framed on desktop', async ({ page }, info) => {

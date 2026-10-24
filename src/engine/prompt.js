@@ -3,6 +3,10 @@
 
 import { addDays, dateKey, startOfDay, WEEKDAYS, parseDateKey } from './time.js'
 import { DOMAINS } from '../state/model.js'
+import { deviceHint, describeLocation } from './location.js'
+
+// Holiday lists Claude supplied are trusted for 6 weeks, then asked for again.
+export const HOLIDAYS_VALID_DAYS = 42
 
 export const SYSTEM_PROMPT = `You are the planning brain of Synapse, a smart calendar and task list.
 The user dumps unstructured thoughts (typed or dictated). You turn them into a JSON object of operations.
@@ -45,11 +49,15 @@ CONSTRAINTS (for flex entries and timed tasks):
   If an EXISTING entry already counts as one of the sessions (e.g. a trainer session for "3 workouts"), put its id
   in "spacingWith" and reduce "count" accordingly. Also set "deadline" for "this week".
 
-SHOPS: CONTEXT shows the user's LOCALE and the SHOP HOURS Synapse knows. If SHOP HOURS is "unknown", add one set_prefs
-op with "shopHours" {"days": [weekdays shops open, 0 = Sunday], "from", "until"} = typical supermarket hours in the
-user's country, and "holidays" = public holidays in the next 8 weeks for that country (YYYY-MM-DD). Example: in
-Germany shops are open Mon-Sat about 08:00-20:00 and closed on Sundays and public holidays. When a closure changes
-the plan (items needed on a Sunday), say so in "assumptions".
+SHOPS & HOLIDAYS: CONTEXT shows the user's LOCATION (city, region, country; or "unknown", then infer the country from
+LOCALE), the SHOP HOURS and the PUBLIC HOLIDAYS Synapse knows. If SHOP HOURS is "unknown", add one set_prefs op with
+"shopHours" {"days": [weekdays shops open, 0 = Sunday], "from", "until"} = typical supermarket hours there. If PUBLIC
+HOLIDAYS is "unknown", add "holidays" = the public holidays of the next 8 weeks for that country AND region
+(YYYY-MM-DD; regional holidays matter). Example: in Austria and Germany shops are open Mon-Sat about 08:00-20:00
+and closed on Sundays and public holidays. When a holiday or closure affects the plan (work on a holiday, items
+needed on a Sunday), say so in "assumptions", and ask if it changes what the user should do.
+
+LANGUAGE: write "summary", "assumptions", question texts, option labels and reasons in the language of the brain dump.
 
 UNCERTAIN DURATIONS: "deviation": {"earlyMin","lateMin"} = how much earlier/later something may END.
 Extract it from phrases like "I usually finish between 3 and 5" (work 09:00-17:00, earlyMin 120).
@@ -149,18 +157,18 @@ export function buildContext(data, now) {
     .map((t) => ({ id: t.id, title: t.title, domain: t.domain, due: t.due || undefined, durationMin: t.durationMin || undefined, entryId: t.entryId || undefined }))
   const shopping = data.shopping.filter((s) => !s.checked).map((s) => (s.neededOn ? `${s.name} (needed ${s.neededOn})` : s.name))
   const questions = data.clarifications.map((q) => q.question)
-  let tz = ''
-  try {
-    tz = Intl.DateTimeFormat().resolvedOptions().timeZone
-  } catch {
-    tz = ''
-  }
-  const lang = typeof navigator !== 'undefined' ? navigator.language : ''
+  const device = deviceHint()
+  const loc = data.prefs.location
   const sh = data.prefs.shopHours
+  const setOn = parseDateKey(data.prefs.holidaysSetOn)
+  const holidaysKnown = setOn != null && today - setOn < HOLIDAYS_VALID_DAYS * 86_400_000
+  const holidays = (data.prefs.holidays || []).filter((h) => h >= dateKey(today))
   return [
-    `NOW: ${WEEKDAYS[wd]} ${dateKey(now)} ${pad(d.getHours())}:${pad(d.getMinutes())}${tz ? ` (${tz})` : ''}`,
-    `LOCALE: ${[lang, tz].filter(Boolean).join(', ') || 'unknown'}`,
-    `SHOP HOURS: ${sh ? `${sh.days.map((x) => WEEKDAYS[x]).join('/')} ${sh.from}-${sh.until}` : 'unknown'}${data.prefs.holidays?.length ? ` · HOLIDAYS: ${data.prefs.holidays.join(', ')}` : ''}`,
+    `NOW: ${WEEKDAYS[wd]} ${dateKey(now)} ${pad(d.getHours())}:${pad(d.getMinutes())}${device.includes('/') ? ` (${device.split(', ').pop()})` : ''}`,
+    `LOCATION: ${loc ? `${describeLocation(loc)}${loc.regionCode ? ` (${loc.regionCode})` : ''}, from GPS on ${loc.at}` : 'unknown, use LOCALE'}`,
+    `LOCALE: ${device || 'unknown'}`,
+    `SHOP HOURS: ${sh ? `${sh.days.map((x) => WEEKDAYS[x]).join('/')} ${sh.from}-${sh.until}` : 'unknown'}`,
+    `PUBLIC HOLIDAYS: ${holidaysKnown ? (holidays.length ? holidays.join(', ') : 'none in the next weeks') : 'unknown'}`,
     `THIS WEEK ENDS: Sunday ${dateKey(sunday)}`,
     `CALENDAR: ${calendar.join(', ')}`,
     `QUIET HOURS: ${data.prefs.quietStart}-${data.prefs.quietEnd}`,

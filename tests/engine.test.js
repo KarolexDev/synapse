@@ -231,7 +231,8 @@ describe('shopping with a needed-on date (shops closed on Sundays)', () => {
   const SAT = new Date(2026, 9, 24, 11, 0).getTime() // Saturday 11:00
   const skeleton = (now, extraPrefs = {}) => {
     const d = applyOps(emptyData(), demoOps(now).filter((o) => o.op !== 'add_shopping' && o.op !== 'add_task'), { now, batchId: 'setup' }).data
-    return { ...d, prefs: { ...d.prefs, ...extraPrefs } }
+    // Shop hours as Claude supplies them for Austria/Germany.
+    return { ...d, prefs: { ...d.prefs, shopHours: { days: [1, 2, 3, 4, 5, 6], from: '08:00', until: '20:00' }, ...extraPrefs } }
   }
   const shop = (data, now, neededOn) => applyOps(data, [{ op: 'add_shopping', items: [{ name: 'groceries' }], ...(neededOn ? { neededOn } : {}) }], { now, batchId: 'b' })
   const run = (r) => {
@@ -270,5 +271,33 @@ describe('shopping with a needed-on date (shops closed on Sundays)', () => {
   it('without a date it stays on the way home', () => {
     const { e } = run(shop(skeleton(MON), MON))
     expect(e.chain?.dateKey).toBe(dk(0))
+  })
+})
+
+describe('context sent to Claude', () => {
+  const SAT = new Date(2026, 9, 24, 11, 0).getTime()
+  const vienna = { city: 'Vienna', region: 'Wien', regionCode: 'AT-9', country: 'Austria', countryCode: 'AT', lat: 48.21, lon: 16.37, source: 'gps', at: '2026-10-24' }
+
+  it('includes location, shop hours and holidays, and asks again when they are unknown or stale', async () => {
+    const { buildContext } = await import('../src/engine/prompt.js')
+    let s = reducer(initialState(), { type: 'setLocation', location: vienna, now: SAT })
+    let ctx = buildContext(s.data, SAT)
+    expect(ctx).toMatch(/^LOCATION: Vienna, Wien, Austria \(AT-9\), from GPS on 2026-10-24$/m)
+    expect(ctx).toMatch(/^SHOP HOURS: unknown$/m)
+    expect(ctx).toMatch(/^PUBLIC HOLIDAYS: unknown$/m)
+    expect(ctx).not.toMatch(/48\.21|16\.37/) // coordinates never leave the device
+    s = { ...s, data: applyOps(s.data, [{ op: 'set_prefs', shopHours: { days: [1, 2, 3, 4, 5, 6], from: '08:00', until: '20:00' }, holidays: ['2026-10-26', '2026-11-01'] }], { now: SAT, batchId: 'b' }).data }
+    ctx = buildContext(s.data, SAT)
+    expect(ctx).toMatch(/^SHOP HOURS: Mon\/Tue\/Wed\/Thu\/Fri\/Sat 08:00-20:00$/m)
+    expect(ctx).toMatch(/^PUBLIC HOLIDAYS: 2026-10-26, 2026-11-01$/m)
+    expect(buildContext(s.data, SAT + 50 * 86_400_000)).toMatch(/^PUBLIC HOLIDAYS: unknown$/m)
+  })
+
+  it('moving to another region resets shop hours and holidays', () => {
+    let s = reducer(initialState(), { type: 'setLocation', location: vienna, now: SAT })
+    s = { ...s, data: { ...s.data, prefs: { ...s.data.prefs, shopHours: { days: [1], from: '08:00', until: '20:00' }, holidays: ['2026-10-26'], holidaysSetOn: '2026-10-24' } } }
+    s = reducer(s, { type: 'setLocation', location: { ...vienna, city: 'Munich', region: 'Bavaria', regionCode: 'DE-BY', country: 'Germany', countryCode: 'DE' }, now: SAT })
+    expect(s.data.prefs.shopHours).toBeNull()
+    expect(s.data.prefs.holidays).toEqual([])
   })
 })
