@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { reducer, initialState } from '../src/state/store.js'
-import { layoutDay } from '../src/engine/layout.js'
+import { layoutDay, occurrenceOf } from '../src/engine/layout.js'
 import { applyOps, shoppingKey, mergeShopping } from '../src/engine/ops.js'
 import { findSlot } from '../src/engine/scheduler.js'
 import { buildICS } from '../src/engine/ics.js'
@@ -8,6 +8,7 @@ import { eventsInRange } from '../src/engine/calendarExport.js'
 import { emptyData, makeEntry } from '../src/state/model.js'
 import { atMinutes, addDays, dateKey, fmtTime, parseDateKey, weekday, MIN } from '../src/engine/time.js'
 import { demoDumpResult } from './fixtures.js'
+import { demoOps } from '../src/state/demoWeek.js'
 
 const MON = new Date(2026, 9, 26, 8, 12).getTime() // Monday 08:12
 const at = (dayOffset, h, m = 0) => atMinutes(addDays(MON, dayOffset), h * 60 + m)
@@ -223,5 +224,51 @@ describe('/api/ics function', () => {
     const bad = res()
     handler({ query: { d: 'not-json' } }, bad)
     expect(bad.code).toBe(400)
+  })
+})
+
+describe('shopping with a needed-on date (shops closed on Sundays)', () => {
+  const SAT = new Date(2026, 9, 24, 11, 0).getTime() // Saturday 11:00
+  const skeleton = (now, extraPrefs = {}) => {
+    const d = applyOps(emptyData(), demoOps(now).filter((o) => o.op !== 'add_shopping' && o.op !== 'add_task'), { now, batchId: 'setup' }).data
+    return { ...d, prefs: { ...d.prefs, ...extraPrefs } }
+  }
+  const shop = (data, now, neededOn) => applyOps(data, [{ op: 'add_shopping', items: [{ name: 'groceries' }], ...(neededOn ? { neededOn } : {}) }], { now, batchId: 'b' })
+  const run = (r) => {
+    const e = r.data.entries.find((x) => x.title === 'Grocery run')
+    return { e, occ: occurrenceOf(r.data.entries, e) }
+  }
+
+  it('needed on Sunday → today before closing, with an explanation', () => {
+    const r = shop(skeleton(SAT), SAT, '2026-10-25')
+    const { occ } = run(r)
+    expect(dateKey(occ.start)).toBe('2026-10-24')
+    expect(occ.start).toBeGreaterThan(SAT)
+    expect(occ.end).toBeLessThanOrEqual(new Date(2026, 9, 24, 20, 0).getTime())
+    expect(r.logs.find((l) => l.note).note).toMatch(/Shops are closed on Sun/)
+  })
+
+  it('needed on Tuesday → Monday on the way home after work', () => {
+    const { e, occ } = run(shop(skeleton(SAT), SAT, '2026-10-27'))
+    expect(e.chain?.dateKey).toBe('2026-10-26')
+    expect(fmtTime(occ.start)).toBe('17:00')
+  })
+
+  it('skips public holidays', () => {
+    const { occ } = run(shop(skeleton(SAT, { holidays: ['2026-10-26'] }), SAT, '2026-10-27'))
+    expect(dateKey(occ.start)).toBe('2026-10-24')
+  })
+
+  it('too late today → earliest open slot afterwards, and it says so', () => {
+    const late = new Date(2026, 9, 24, 19, 45).getTime()
+    const r = shop(skeleton(late), late, '2026-10-25')
+    const { occ } = run(r)
+    expect(dateKey(occ.start)).toBe('2026-10-26')
+    expect(r.logs.find((l) => l.note).note).toMatch(/No open slot left by Today/)
+  })
+
+  it('without a date it stays on the way home', () => {
+    const { e } = run(shop(skeleton(MON), MON))
+    expect(e.chain?.dateKey).toBe(dk(0))
   })
 })

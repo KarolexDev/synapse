@@ -39,6 +39,7 @@ const DECISION_TYPES = new Set(['schedule', 'reflow', 'rollover', 'merge', 'domi
 
 function LogItem({ l, onOpenRef, entryExists }) {
   const [open, setOpen] = useState(false)
+  const [raw, setRaw] = useState(false)
   const t = TYPES[l.type] || TYPES.system
   const Icon = t.icon
   const ref = l.refs?.find(entryExists)
@@ -65,7 +66,13 @@ function LogItem({ l, onOpenRef, entryExists }) {
               Open →
             </button>
           ) : null}
+          {l.raw ? (
+            <button type="button" onClick={() => setRaw((x) => !x)} className="press text-[12.5px] font-semibold text-ink-3 hover:text-ink-2">
+              {raw ? 'Hide' : 'Show'} Claude’s answer
+            </button>
+          ) : null}
         </div>
+        {raw ? <pre className="no-scrollbar mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-black/40 p-3 font-mono text-[10.5px] leading-snug text-ink-2">{l.raw}</pre> : null}
         {open ? (
           <ul className="mt-2 space-y-1 border-l border-white/10 pl-3">
             {l.lines.map((x, i) => (

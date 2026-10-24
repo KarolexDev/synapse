@@ -9,6 +9,19 @@ export const HORIZON_DAYS = 56
 
 const isWeekend = (day) => weekday(day) === 0 || weekday(day) === 6
 
+/** True when shops are closed all day (weekday not in the shop days, or a public holiday). */
+export function shopsClosed(prefs, day) {
+  const h = prefs?.shopHours
+  if (!h) return false
+  return !h.days.includes(weekday(day)) || (prefs.holidays || []).includes(dateKey(day))
+}
+
+function shopWindow(prefs, day) {
+  const h = prefs?.shopHours
+  if (!h) return null
+  return { start: atMinutes(day, parseHM(h.from) ?? 0), end: atMinutes(day, parseHM(h.until) ?? 24 * 60), label: 'opening hours' }
+}
+
 export function dayBounds(day, prefs) {
   const open = parseHM(prefs?.quietEnd) ?? 7 * 60
   const quiet = parseHM(prefs?.quietStart) ?? 23 * 60
@@ -89,6 +102,7 @@ function findOnDay(entry, day, { others, prefs, earliest, deadlineEnd }) {
   const blockingAllDay = L.allDay.find((o) => o.entry.blocking)
   if (blockingAllDay) return { blockers: [blockingAllDay.entry.title] }
   const c = entry.constraints || {}
+  if (c.storeHours && shopsClosed(prefs, day)) return { closed: true }
   const dur = entry.durationMin * MIN
   const buf = (c.bufferMin || 0) * MIN
   const busy = busyIntervals(L.occurrences, entry.id, entry.durationMin <= 30)
@@ -96,6 +110,7 @@ function findOnDay(entry, day, { others, prefs, earliest, deadlineEnd }) {
   const [open, close] = dayBounds(day, prefs)
   let windows = windowsFor(tokens, day, L.occurrences, prefs)
   if (c.businessHours) windows = intersect(windows, windowsFor(['business_hours'], day, L.occurrences, prefs))
+  if (c.storeHours && prefs?.shopHours) windows = intersect(windows, [shopWindow(prefs, day)])
   // Token order is priority order within a day ("lunch" before "business_hours"), so no re-sorting.
   windows = windows
     .map((w) => ({ ...w, start: Math.max(w.start, open, earliest), end: Math.min(w.end, close, deadlineEnd) }))
@@ -134,12 +149,17 @@ function tooClose(day, group, restDays) {
 
 const withPlacement = (e, p) => ({ ...e, date: p.date ?? null, time: p.time ?? null, chain: p.chain ?? null })
 
-function wayHomeSlot(others, earliest, firstDay, lastDay) {
+function wayHomeSlot(entry, others, earliest, firstDay, lastDay, prefs) {
+  const storeHours = entry.constraints?.storeHours
   for (let day = firstDay; day <= lastDay; day = addDays(day, 1)) {
     const L = layoutDay(others, day)
     if (L.allDay.some((o) => o.entry.blocking)) continue
+    if (storeHours && shopsClosed(prefs, day)) continue
     const work = L.occurrences.find((o) => o.entry.role === 'work')
     if (!work || work.end < earliest) continue
+    const shop = storeHours ? shopWindow(prefs, day) : null
+    // Plan-safe: even if work runs late, the stop must still fit before closing.
+    if (shop && (work.lateEnd + entry.durationMin * MIN > shop.end || work.earlyEnd < shop.start)) continue
     return { chain: { after: work.entryId, dateKey: L.dateKey }, work }
   }
   return null
@@ -169,13 +189,13 @@ export function findSlot(entry, { entries, now, prefs }, hint = {}) {
   }
 
   if (c.wayHome) {
-    const r = wayHomeSlot(others, earliest, firstDay, lastDay)
+    const r = wayHomeSlot(entry, others, earliest, firstDay, lastDay, prefs)
     if (r) {
       const placed = withPlacement(entry, { chain: r.chain })
       const occ = occurrenceOf([...others, placed], placed)
       return { placement: { chain: r.chain }, start: occ?.start, window: 'on the way home', notes, rejections }
     }
-    notes.push('No workday commute in range — using a regular evening slot')
+    notes.push('No commute before then, so it gets its own trip')
     entry = { ...entry, constraints: { ...c, wayHome: false, preferred: ['evening', 'weekend'] } }
   }
 
@@ -193,6 +213,7 @@ export function findSlot(entry, { entries, now, prefs }, hint = {}) {
       }
       const r = findOnDay(entry, day, { others, prefs, earliest, deadlineEnd })
       if (r.start != null) return { placement: { date: dateKey(day), time: fmtTime(r.start) }, start: r.start, window: r.window, skipped }
+      if (r.closed && skipped.length < 3) skipped.push(`${fmtDay(day)}: shops are closed`)
       if (r.blockers?.length && skipped.length < 3 && (day - firstDay) / DAY < 2)
         skipped.push(`${fmtDay(day)}: no fitting slot (${r.blockers.slice(0, 2).join(', ')})`)
     }

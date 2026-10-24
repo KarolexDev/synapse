@@ -18,12 +18,14 @@ OPERATIONS
   Give "durationMin" and "constraints". For "N times" emit ONE op with "count": N.
 - add_task: a to-do. Give "durationMin" only if it needs a time block (a call ~10-15 min, an errand, a chore).
   Quick things ("text mom") get no durationMin; give "due" if a day is known.
-- add_shopping: things to buy -> "items": [{"name","qty"}]. Never create a task for buying groceries or household
-  items; Synapse bundles the shopping list into one grocery run on the way home automatically.
+- add_shopping: things to buy -> "items": [{"name","qty"}], plus "neededOn" (YYYY-MM-DD) whenever the user says when
+  they need them ("for tomorrow", "for the party on Saturday"). Never create a task for buying groceries or household
+  items; Synapse bundles the shopping list into one grocery run (on the way home after work, or earlier when
+  "neededOn" requires it) and keeps it inside shop opening hours.
 - update / cancel / complete: change EXISTING items by "target" = their id from CONTEXT. "set" holds the changed fields.
   For one occurrence of a repeating entry add "onlyDate". Never add a duplicate of an item that already exists
   (same title or obviously the same thing) - update it or leave it.
-- set_prefs: "quietStart"/"quietEnd" (sleep / do-not-plan hours).
+- set_prefs: "quietStart"/"quietEnd" (sleep / do-not-plan hours), "shopHours" and "holidays" (see SHOPS).
 Use "ref" (short name like "w1", "work", "hold1") on new items so other ops and question options can point at them
 in "target", "after", "before", "followUpOf", "awaiting", "spacingWith".
 
@@ -37,10 +39,17 @@ CONSTRAINTS (for flex entries and timed tasks):
 - "businessHours": true for calls and appointments with businesses (landlord, dentist, bank, doctor).
   Short calls also prefer "lunch".
 - "wayHome": true for errands that are a stop on the way home (pharmacy, post office, picking something up).
+- "storeHours": true for anything that needs a shop or counter to be open (pharmacy, post office, hardware store).
 - "notBefore" / "deadline": YYYY-MM-DD.
 - Repeated sessions: "group" (e.g. "workout") and "minRestDays" (strength or cardio training: 1).
   If an EXISTING entry already counts as one of the sessions (e.g. a trainer session for "3 workouts"), put its id
   in "spacingWith" and reduce "count" accordingly. Also set "deadline" for "this week".
+
+SHOPS: CONTEXT shows the user's LOCALE and the SHOP HOURS Synapse knows. If SHOP HOURS is "unknown", add one set_prefs
+op with "shopHours" {"days": [weekdays shops open, 0 = Sunday], "from", "until"} = typical supermarket hours in the
+user's country, and "holidays" = public holidays in the next 8 weeks for that country (YYYY-MM-DD). Example: in
+Germany shops are open Mon-Sat about 08:00-20:00 and closed on Sundays and public holidays. When a closure changes
+the plan (items needed on a Sunday), say so in "assumptions".
 
 UNCERTAIN DURATIONS: "deviation": {"earlyMin","lateMin"} = how much earlier/later something may END.
 Extract it from phrases like "I usually finish between 3 and 5" (work 09:00-17:00, earlyMin 120).
@@ -138,7 +147,7 @@ export function buildContext(data, now) {
     .filter((t) => t.status === 'open')
     .slice(0, 60)
     .map((t) => ({ id: t.id, title: t.title, domain: t.domain, due: t.due || undefined, durationMin: t.durationMin || undefined, entryId: t.entryId || undefined }))
-  const shopping = data.shopping.filter((s) => !s.checked).map((s) => s.name)
+  const shopping = data.shopping.filter((s) => !s.checked).map((s) => (s.neededOn ? `${s.name} (needed ${s.neededOn})` : s.name))
   const questions = data.clarifications.map((q) => q.question)
   let tz = ''
   try {
@@ -146,8 +155,12 @@ export function buildContext(data, now) {
   } catch {
     tz = ''
   }
+  const lang = typeof navigator !== 'undefined' ? navigator.language : ''
+  const sh = data.prefs.shopHours
   return [
     `NOW: ${WEEKDAYS[wd]} ${dateKey(now)} ${pad(d.getHours())}:${pad(d.getMinutes())}${tz ? ` (${tz})` : ''}`,
+    `LOCALE: ${[lang, tz].filter(Boolean).join(', ') || 'unknown'}`,
+    `SHOP HOURS: ${sh ? `${sh.days.map((x) => WEEKDAYS[x]).join('/')} ${sh.from}-${sh.until}` : 'unknown'}${data.prefs.holidays?.length ? ` · HOLIDAYS: ${data.prefs.holidays.join(', ')}` : ''}`,
     `THIS WEEK ENDS: Sunday ${dateKey(sunday)}`,
     `CALENDAR: ${calendar.join(', ')}`,
     `QUIET HOURS: ${data.prefs.quietStart}-${data.prefs.quietEnd}`,
@@ -190,6 +203,7 @@ const CONSTRAINTS = obj({
   minRestDays: I,
   spacingWith: { type: 'array', items: S },
   bufferMin: I,
+  storeHours: B,
 })
 const DOMAIN = { type: 'string', enum: Object.keys(DOMAINS) }
 const SET = obj({
@@ -207,7 +221,10 @@ const OP = obj(
     constraints: CONSTRAINTS, count: I, hold: B, awaiting: S, due: S,
     items: { type: 'array', items: obj({ name: S, qty: I }, ['name']) },
     followUpOf: S, assumptions: { type: 'array', items: S }, reason: S,
+    neededOn: S,
     quietStart: S, quietEnd: S,
+    shopHours: obj({ days: { type: 'array', items: I }, from: S, until: S }, ['days', 'from', 'until']),
+    holidays: { type: 'array', items: S },
   },
   ['op'],
 )

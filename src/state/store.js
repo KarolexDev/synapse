@@ -169,6 +169,8 @@ export function reducer(state, action) {
       const scheduled = countType(r.logs, 'schedule')
       const total = r.stats.added + r.stats.updated + r.stats.cancelled + r.stats.completed + r.stats.merged
       const conflicts = countType(r.logs, 'conflict')
+      const note = r.logs.find((l) => l.note)?.note
+      const meta = action.meta ? `${action.meta.model.replace(/^Claude /, '')} · ${(action.meta.ms / 1000).toFixed(1)} s` : ''
       return {
         ...state,
         data: r.data,
@@ -178,7 +180,7 @@ export function reducer(state, action) {
           ? state.toasts
           : addToast(state, {
               title: `${total} item${total === 1 ? '' : 's'} organized`,
-              detail: [scheduled ? `${scheduled} placed in your calendar` : '', r.questions ? `${r.questions} question${r.questions > 1 ? 's' : ''} for you` : '', conflicts ? `${conflicts} without a free slot` : ''].filter(Boolean).join(' · '),
+              detail: note || [scheduled ? `${scheduled} placed` : '', r.questions ? `${r.questions} question${r.questions > 1 ? 's' : ''}` : '', conflicts ? `${conflicts} without a slot` : '', meta].filter(Boolean).join(' · '),
               batchId,
               kind: 'success',
             }),

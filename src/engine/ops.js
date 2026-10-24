@@ -2,9 +2,9 @@
 // sanitized here; placement of flex items is delegated to the deterministic scheduler.
 
 import { makeEntry, makeTask, makeShoppingItem, uid, domainOf } from '../state/model.js'
-import { findSlot, withPlacement } from './scheduler.js'
+import { findSlot, withPlacement, shopsClosed } from './scheduler.js'
 import { occurrenceOf, isOnDay } from './layout.js'
-import { parseDateKey, parseHM, fmtWhen, fmtDay, startOfDay, addDays, dateKey, DAY } from './time.js'
+import { parseDateKey, parseHM, fmtWhen, fmtDay, startOfDay, addDays, dateKey, DAY, WEEKDAYS_LONG } from './time.js'
 
 const PREF_TOKENS = new Set(['morning', 'lunch', 'afternoon', 'evening', 'after_work', 'weekend', 'weekend_morning', 'weekday', 'business_hours', 'any'])
 const ROLES = new Set(['work', 'commute_to', 'commute_home'])
@@ -45,6 +45,7 @@ function sanitizeConstraints(c, resolve) {
   if (preferred.length) out.preferred = preferred
   if (c.businessHours) out.businessHours = true
   if (c.wayHome) out.wayHome = true
+  if (c.storeHours) out.storeHours = true
   if (c.minRestDays != null) out.minRestDays = int(c.minRestDays, 0, 6, 0)
   if (c.group) out.group = slug(c.group)
   if (Array.isArray(c.spacingWith)) out.spacingWith = c.spacingWith.map(resolve).filter(Boolean)
@@ -73,7 +74,7 @@ export function shoppingKey(name) {
   return [...words, last].join(' ')
 }
 
-export function mergeShopping(list, items, { now, batchId }) {
+export function mergeShopping(list, items, { now, batchId, neededOn = null }) {
   let out = [...list]
   const added = []
   const merged = []
@@ -84,11 +85,12 @@ export function mergeShopping(list, items, { now, batchId }) {
     const key = shoppingKey(name)
     const existing = out.find((s) => s.key === key)
     if (existing) {
-      out = out.map((s) => (s.id === existing.id ? { ...s, checked: false, qty: Math.max(s.qty, qty), mergedAt: now } : s))
+      const need = [existing.checked ? null : existing.neededOn, neededOn].filter(Boolean).sort()[0] || null
+      out = out.map((s) => (s.id === existing.id ? { ...s, checked: false, qty: Math.max(s.qty, qty), mergedAt: now, neededOn: need } : s))
       merged.push(existing.checked ? `${existing.name} (re-added)` : existing.name)
     } else {
       const display = name.charAt(0).toUpperCase() + name.slice(1)
-      out.push(makeShoppingItem({ name: display, key, qty, batchId, createdAt: now }))
+      out.push(makeShoppingItem({ name: display, key, qty, neededOn, batchId, createdAt: now }))
       added.push(display)
     }
   }
@@ -225,9 +227,10 @@ export function applyOps(data, ops, ctx) {
           break
         }
         case 'add_shopping': {
-          const r = mergeShopping(shopping, raw.items, { now, batchId })
+          const neededOn = vDate(raw.neededOn)
+          const r = mergeShopping(shopping, raw.items, { now, batchId, neededOn })
           shopping = r.list
-          if (r.added.length) log('add', `Shopping list: +${r.added.join(', ')}`, str(raw.reason, 200))
+          if (r.added.length) log('add', `Shopping list: +${r.added.join(', ')}`, [str(raw.reason, 200), neededOn ? `Needed ${fmtDay(parseDateKey(neededOn))}` : ''].filter(Boolean).join(' · '))
           if (r.merged.length) {
             stats.merged += r.merged.length
             log('merge', `Already on your list: ${r.merged.join(', ')}`, 'Merged instead of adding duplicates')
@@ -325,6 +328,18 @@ export function applyOps(data, ops, ctx) {
           if (qs) prefs.quietStart = qs
           if (qe) prefs.quietEnd = qe
           if (qs || qe) log('prefs', `Quiet hours ${prefs.quietStart}–${prefs.quietEnd}`, str(raw.reason, 200))
+          const sh = raw.shopHours
+          if (sh && vTime(sh.from) && vTime(sh.until)) {
+            const days = [...new Set((sh.days || []).map((d) => int(d, 0, 6, -1)).filter((d) => d >= 0))].sort()
+            if (days.length) {
+              prefs.shopHours = { days, from: vTime(sh.from), until: vTime(sh.until) }
+              log('prefs', `Shop hours ${days.map((d) => WEEKDAYS_LONG[d].slice(0, 3)).join(', ')} ${prefs.shopHours.from}–${prefs.shopHours.until}`, str(raw.reason, 200))
+            }
+          }
+          if (Array.isArray(raw.holidays)) {
+            prefs.holidays = [...new Set(raw.holidays.map(vDate).filter(Boolean))].sort().slice(0, 30)
+            if (prefs.holidays.length) log('prefs', `${prefs.holidays.length} public holiday${prefs.holidays.length > 1 ? 's' : ''} noted`, prefs.holidays.map((d) => fmtDay(parseDateKey(d))).join(', '))
+          }
           break
         }
         default:
@@ -335,16 +350,37 @@ export function applyOps(data, ops, ctx) {
     }
   }
 
-  // Structural rule: open shopping items always have one grocery run on the way home.
+  // Structural rule: open shopping items always have one grocery run, by default on the way home
+  // after work. Items needed on a given day pull the run to the day before (or today), within
+  // opening hours.
   const openItems = shopping.filter((s) => !s.checked)
   const run = tasks.find((t) => t.kind === 'grocery_run' && t.status === 'open')
+  const today = dateKey(now)
+  const neededOn = openItems.map((s) => s.neededOn).filter(Boolean).sort()[0] || null
+  const deadline = neededOn ? [today, dateKey(addDays(parseDateKey(neededOn), -1))].sort()[1] : null
+  const closedNote = neededOn && shopsClosed(prefs, parseDateKey(neededOn)) ? `Shops are closed on ${fmtDay(parseDateKey(neededOn))}` : ''
+  const runReason = [
+    neededOn ? `Needed ${fmtDay(parseDateKey(neededOn))}, so it happens ${deadline === today ? 'today' : `by ${fmtDay(parseDateKey(deadline))}`}` : `Bundles ${openItems.length} shopping item${openItems.length > 1 ? 's' : ''} into one stop`,
+    closedNote,
+  ].filter(Boolean).join(' · ')
+  const runConstraints = { wayHome: true, storeHours: true, ...(deadline ? { deadline } : {}) }
   if (openItems.length && !run) {
     const task = makeTask({ title: 'Grocery run', domain: 'errands', durationMin: 30, kind: 'grocery_run', source: 'rule', batchId, createdAt: now + seq++ })
-    const entry = makeEntry({ title: 'Grocery run', domain: 'errands', kind: 'flex', durationMin: 30, constraints: { wayHome: true }, taskId: task.id, source: 'rule', batchId, createdAt: now + seq++ })
+    const entry = makeEntry({ title: 'Grocery run', domain: 'errands', kind: 'flex', durationMin: 30, constraints: runConstraints, taskId: task.id, source: 'rule', batchId, createdAt: now + seq++ })
     task.entryId = entry.id
     tasks.push(task)
     entries.push(entry)
-    queue.push({ id: entry.id, hint: {}, reason: `Bundles ${openItems.length} shopping item${openItems.length > 1 ? 's' : ''} into one stop` })
+    queue.push({ id: entry.id, hint: {}, reason: runReason, note: closedNote })
+  } else if (run && deadline) {
+    const e = entries.find((x) => x.id === run.entryId)
+    const placedOn = e?.chain?.dateKey ?? e?.date
+    if (e && e.status === 'planned' && !e.pinned && e.constraints?.deadline !== deadline) {
+      setEntry(e.id, (x) => ({ ...x, constraints: { ...x.constraints, ...runConstraints } }))
+      if (!placedOn || placedOn > deadline) {
+        setEntry(e.id, (x) => ({ ...x, date: null, time: null, chain: null }))
+        queue.push({ id: e.id, hint: {}, reason: runReason, note: closedNote })
+      }
+    }
   }
 
   // Spread hints for session series (e.g. "3 workouts this week").
@@ -372,14 +408,26 @@ export function applyOps(data, ops, ctx) {
     const e = entries.find((x) => x.id === q.id)
     if (!e || e.status !== 'planned') continue
     const hint = { ...q.hint, spreadRest: spread.get(e.constraints?.group) }
-    const r = findSlot(e, { entries, now, prefs }, hint)
+    let r = findSlot(e, { entries, now, prefs }, hint)
+    let late = ''
+    if (!r.placement && e.constraints?.deadline) {
+      // Nothing fits before the deadline: take the earliest slot after it and say so.
+      const { deadline, ...rest } = e.constraints
+      const r2 = findSlot({ ...e, constraints: rest }, { entries, now, prefs }, hint)
+      if (r2.placement) {
+        late = `No open slot left by ${fmtDay(parseDateKey(deadline), now)}`
+        r = { ...r2, notes: [...r.notes, ...r2.notes], rejections: [...r.rejections, ...r2.rejections].slice(0, 4) }
+      }
+    }
     if (r.placement) {
       const updated = withPlacement(e, r.placement)
       setEntry(e.id, () => updated)
       const occ = occurrenceOf(entries, updated)
       placed.push(e.id)
-      const why = [q.reason || e.reason, r.window ? `Fits ${r.window}` : '', ...r.notes].filter(Boolean)
+      const why = [q.reason || e.reason, late, r.window ? `Fits ${r.window}` : '', ...r.notes].filter(Boolean)
       log('schedule', `${e.title} → ${fmtWhen(occ?.start ?? r.start)}`, why.join(' · '), [e.id, e.taskId].filter(Boolean), r.rejections)
+      const note = [q.note, late].filter(Boolean).join(' · ')
+      if (note) logs[logs.length - 1].note = `${note} · ${e.title} ${fmtWhen(occ?.start ?? r.start, now)}`
     } else {
       log('conflict', `No free slot for ${e.title}`, [...r.notes, 'Kept in your task list — tap it to pick a time'].join(' · '), [e.id, e.taskId].filter(Boolean), r.rejections)
     }
@@ -420,6 +468,7 @@ export function applyAIResult(data, result, ctx) {
     title: str(result?.summary, 200) || 'Brain dump understood',
     detail: ctx.meta ? `${ctx.meta.model} · ${(ctx.meta.ms / 1000).toFixed(1)} s${ctx.meta.attempts > 1 ? ` · ${ctx.meta.attempts} attempts` : ''}` : '',
     lines: strArr(result?.assumptions, 6).map((a) => `Assumed: ${a}`),
+    raw: ctx.meta ? JSON.stringify(result, null, 1).slice(0, 12_000) : undefined,
   }
   const qLogs = questions.map((q) => ({ id: uid('l'), ts: ctx.now, type: 'clarify', batchId: ctx.batchId, refs: [], title: `Asking: ${q.question}`, detail: q.why, lines: [] }))
   return {

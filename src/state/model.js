@@ -21,7 +21,8 @@ export function uid(prefix) {
   return `${prefix}_${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 6)}${counter.toString(36)}`
 }
 
-export const DEFAULT_PREFS = { quietStart: '23:00', quietEnd: '07:00' }
+// shopHours: { days: [1..6], from: 'HH:MM', until: 'HH:MM' } for the user's country (set by Claude), holidays: ['YYYY-MM-DD']
+export const DEFAULT_PREFS = { quietStart: '23:00', quietEnd: '07:00', shopHours: null, holidays: [] }
 
 export const DEFAULT_SETTINGS = {
   tier: 'fast', // 'fast' | 'depth'
@@ -89,6 +90,7 @@ export function makeShoppingItem(fields) {
     name: fields.name,
     key: fields.key,
     qty: fields.qty ?? 1,
+    neededOn: fields.neededOn ?? null,
     checked: !!fields.checked,
     mergedAt: fields.mergedAt ?? null,
     batchId: fields.batchId ?? null,
